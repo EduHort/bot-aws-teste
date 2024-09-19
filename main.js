@@ -1,20 +1,25 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { addRowToExcel, findRowByOption } = require('./excelHandler.js');
+const { registerUserInteraction, updateMessageTracking, clearUserTrackingData, findUserTrackingData } = require('./dbHandler.js');
+const { calculateWorkingTime } = require('./timeHandler.js');
 
-// Numero do dono do bot - Colocar o numero do celular dono do whatsapp /////////////////////////////////////////
-const numeroDono = '554396183723@c.us';
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+// Numero do dono do bot - O programa pega o número automaticamente
+let numeroDono = '';
 
 // Cria uma nova instância do cliente
 const client = new Client({
     authStrategy: new LocalAuth(),
+    puppeteer: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    }
 });
 
 // Quando o cliente estiver pronto, execute este código (apenas uma vez)
 client.once('ready', () => {
     console.log('Cliente está pronto!');
+    numeroDono = client.info.wid.user + '@c.us';
+    console.log(numeroDono);
 });
 
 // Quando o cliente receber o QR-Code
@@ -24,9 +29,6 @@ client.on('qr', (qr) => {
 
 // Inicia o cliente
 client.initialize();
-
-// Objeto para armazenar o tempo quando uma mensagem específica foi enviada e estado de pergunta
-const messageTracking = {};
 
 // Mapa de opções associando os números ao que eles representam
 const optionsMap = {
@@ -42,69 +44,67 @@ const optionsMap = {
     '10': 'Cancelar'
 };
 
-// Função para enviar a mensagem inicial e rastreá-la
-const setCliente = async (message) => {
-    // Armazena o cliente quando a mensagem foi enviada e redefine a flag de resposta
-    messageTracking[message.to] = {
-        responded: false,
-        userReplyTime: null,
-        isWaitingForAttendant: false,
-        userChoice: null,
-        userOption: null,
-        rowNumber: null,
-    };
-};
-
 // Escuta todas as mensagens recebidas
 client.on('message_create', async message => {
-    if (message.body.includes('Por favor digite o número da opção que você deseja') && message.from === numeroDono) {
-        await setCliente(message);
-    }
-    else if (messageTracking[message.from] && !messageTracking[message.from].responded) {
-        // Verifica se a resposta é uma das opções válidas (1-10)
-        if (/^[1-9]$|^10$/.test(message.body.trim())) {
-            // Armazena o numero escolhido
-            const userChoice = message.body.trim();
-            messageTracking[message.from].userChoice = userChoice;
-
-            // Armazena o setor escolhido
-            const userOption = optionsMap[userChoice];
-            messageTracking[message.from].userOption = userOption;
-
-            // Marca como respondido para evitar mais respostas a esta mensagem específica
-            messageTracking[message.from].responded = true;
-
-            // Armazena o tempo em que a resposta foi enviada pelo cliente
-            messageTracking[message.from].userReplyTime = new Date();
-            messageTracking[message.from].isWaitingForAttendant = true;
-
-            const currentTime = new Date().toLocaleString();
-
-            // Adiciona uma nova linha no Excel com os dados do cliente
-            addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime]);
-
-            // Encontra a linha onde foi registrada a resposta do cliente
-            const rowNumber = findRowByOption(currentTime);
-            messageTracking[message.from].rowNumber = rowNumber;  // Armazena o número da linha
-        } 
-    } 
-    else if (message.from === numeroDono && messageTracking[message.to] && messageTracking[message.to].isWaitingForAttendant) {
-        if(!message.body.includes('estou encaminhando para atendimento')){
-            // Captura o tempo quando o atendente envia uma mensagem após a mensagem de encaminhamento
-            const atendenteReplyTime = new Date();
-
-            // Calcula a diferença de tempo entre a resposta válida do cliente e a resposta do atendente
-            const { userReplyTime, rowNumber } = messageTracking[message.to];
-            let timeDiff = (atendenteReplyTime - userReplyTime) / 1000;
-
-            const weekday = atendenteReplyTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
-            const dateAndTime = atendenteReplyTime.toLocaleString();
-
-            // Atualiza a linha do Excel com as novas informações
-            addRowToExcel([null, null, null, weekday, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
-        
-            // Limpa o rastreamento do tempo de resposta
-            delete messageTracking[message.to];
+    try {
+        // Busca os dados do usuário no banco de dados
+        let userData = null;
+        if(message.from !== numeroDono){
+            userData = await findUserTrackingData(message.from);
         }
+        else{
+            userData = await findUserTrackingData(message.to);
+        }
+        // Verifica se a mensagem indica um novo usuário que precisa ser registrado
+        if (message.body.includes('Por favor digite o número da opção que você deseja') && message.from === numeroDono && !userData) {
+            // Registra o novo usuário no banco de dados
+            await registerUserInteraction(message.to);
+        } 
+        // Verifica se o usuário existe e está esperando para escolher uma opção (1 a 9)
+        else if (userData && !userData.option && !userData.replyTime && !userData.rowNumber) {
+            // Verifica se a resposta do cliente é uma opção válida (1-9)
+            if (/^[1-9]$/.test(message.body.trim())) {     //ver o que acontece se a mensagem tiver espaços.
+                const userChoice = message.body.trim();
+                const userOption = optionsMap[userChoice]; // Obtém a opção correspondente ao número
+                const currentTime = new Date();
+
+                // Adiciona os dados do cliente na planilha Excel
+                addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString()]);
+                
+                // Encontra o número da linha onde a resposta do cliente foi registrada na planilha
+                const rowNumber = findRowByOption(currentTime.toLocaleString()); 
+
+                // Atualiza os dados do usuário no banco de dados com a opção, tempo e número da linha
+                await updateMessageTracking(message.from, userOption, currentTime.toISOString(), rowNumber);
+            // Verifica se o cliente digitou '10' (Reiniciar o fluxo?)
+            } else if (/^10$/.test(message.body.trim())) {
+                // Limpa os dados de rastreamento do usuário no banco de dados
+                await clearUserTrackingData(message.to); 
+            }
+        }
+        // Verifica se a mensagem é do atendente e se o usuário está sendo atendido
+        else if (message.from === numeroDono && userData && userData.option && userData.replyTime && userData.rowNumber) {
+            // Verifica se a mensagem do atendente NÃO contém frases específicas 
+            if (!message.body.includes('estou encaminhando para atendimento') && !message.body.includes('Estamos fechados no momento') && !message.body.includes('Nossos atendentes estão em horário de almoço')) {
+                const replyTime = new Date(userData.replyTime);
+                const rowNumber = userData.rowNumber;
+                const atendenteReplyTime = new Date();
+                
+                // Calcula o tempo de resposta do atendente
+                const timeDiff = calculateWorkingTime(replyTime, atendenteReplyTime); 
+
+                const weekday = atendenteReplyTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
+                const dateAndTime = atendenteReplyTime.toLocaleString();
+
+                // Adiciona os dados do atendente na planilha, na mesma linha do cliente
+                addRowToExcel([null, null, null, weekday, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
+                
+                // Limpa os dados de rastreamento do usuário no banco de dados
+                await clearUserTrackingData(message.to);
+            }
+        }
+    } catch (err) {
+        // Captura e imprime erros no console
+        console.error('Erro ao processar mensagem:', err); 
     }
 });
