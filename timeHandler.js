@@ -1,7 +1,13 @@
 // Função para verificar se um horário está dentro dos intervalos permitidos
 const isInAllowedInterval = (date) => {
+    const day = date.getDay();
     const hour = date.getHours();
     const minutes = date.getMinutes();
+
+    // Verifica se é sábado (6) ou domingo (0)
+    if (day === 0 || day === 6) {
+        return false;
+    }
 
     // Verifica se está dentro dos intervalos: 8h30-12h e 13h-17h30
     const isMorning = (hour === 8 && minutes >= 30) || (hour > 8 && hour < 12) || (hour === 12 && minutes === 0);

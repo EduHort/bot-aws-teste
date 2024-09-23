@@ -12,6 +12,7 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: '/usr/bin/chromium-browser',
     }
 });
 
@@ -67,12 +68,13 @@ client.on('message_create', async message => {
                 const userChoice = message.body.trim();
                 const userOption = optionsMap[userChoice]; // Obtém a opção correspondente ao número
                 const currentTime = new Date();
+                currentTime.setHours(currentTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
 
                 // Adiciona os dados do cliente na planilha Excel
-                addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString()]);
+                addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString('pt-BR')]);
                 
                 // Encontra o número da linha onde a resposta do cliente foi registrada na planilha
-                const rowNumber = findRowByOption(currentTime.toLocaleString()); 
+                const rowNumber = findRowByOption(currentTime.toLocaleString('pt-BR')); 
 
                 // Atualiza os dados do usuário no banco de dados com a opção, tempo e número da linha
                 await updateMessageTracking(message.from, userOption, currentTime.toISOString(), rowNumber);
@@ -89,12 +91,13 @@ client.on('message_create', async message => {
                 const replyTime = new Date(userData.replyTime);
                 const rowNumber = userData.rowNumber;
                 const atendenteReplyTime = new Date();
+                atendenteReplyTime.setHours(atendenteReplyTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
                 
                 // Calcula o tempo de resposta do atendente
                 const timeDiff = calculateWorkingTime(replyTime, atendenteReplyTime); 
 
                 const weekday = atendenteReplyTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
-                const dateAndTime = atendenteReplyTime.toLocaleString();
+                const dateAndTime = atendenteReplyTime.toLocaleString('pt-BR');
 
                 // Adiciona os dados do atendente na planilha, na mesma linha do cliente
                 addRowToExcel([null, null, null, weekday, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
