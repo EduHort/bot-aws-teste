@@ -48,62 +48,67 @@ const optionsMap = {
 // Escuta todas as mensagens recebidas
 client.on('message_create', async message => {
     try {
-        // Busca os dados do usuário no banco de dados
-        let userData = null;
-        if(message.from !== numeroDono){
-            userData = await findUserTrackingData(message.from);
+        if(message.from === numeroDono && message.body.includes('continua nos dando motivos para celebrar')){
+            // do nothing
         }
         else{
-            userData = await findUserTrackingData(message.to);
-        }
-        // Verifica se a mensagem indica um novo usuário que precisa ser registrado
-        if (message.body.includes('Por favor digite o número da opção que você deseja') && message.from === numeroDono && !userData) {
-            // Registra o novo usuário no banco de dados
-            await registerUserInteraction(message.to);
-        } 
-        // Verifica se o usuário existe e está esperando para escolher uma opção (1 a 9)
-        else if (userData && !userData.option && !userData.replyTime && !userData.rowNumber) {
-            // Verifica se a resposta do cliente é uma opção válida (1-9)
-            if (/^[1-9]$/.test(message.body.trim())) {     //ver o que acontece se a mensagem tiver espaços.
-                const userChoice = message.body.trim();
-                const userOption = optionsMap[userChoice]; // Obtém a opção correspondente ao número
-                const currentTime = new Date();
-                currentTime.setHours(currentTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
-                const weekday = currentTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
-
-                // Adiciona os dados do cliente na planilha Excel
-                addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString('pt-BR')], weekday);
-                
-                // Encontra o número da linha onde a resposta do cliente foi registrada na planilha
-                const rowNumber = findRowByOption(currentTime.toLocaleString('pt-BR')); 
-
-                // Atualiza os dados do usuário no banco de dados com a opção, tempo e número da linha
-                await updateMessageTracking(message.from, userOption, currentTime.toISOString(), rowNumber);
-            // Verifica se o cliente digitou '10' (Reiniciar o fluxo?)
-            } else if (/^10$/.test(message.body.trim())) {
-                // Limpa os dados de rastreamento do usuário no banco de dados
-                await clearUserTrackingData(message.to); 
+            // Busca os dados do usuário no banco de dados
+            let userData = null;
+            if(message.from !== numeroDono){
+                userData = await findUserTrackingData(message.from);
             }
-        }
-        // Verifica se a mensagem é do atendente e se o usuário está sendo atendido
-        else if (message.from === numeroDono && userData && userData.option && userData.replyTime && userData.rowNumber) {
-            // Verifica se a mensagem do atendente NÃO contém frases específicas 
-            if (!message.body.includes('estou encaminhando para atendimento') && !message.body.includes('Estamos fechados no momento') && !message.body.includes('Nossos atendentes estão em horário de almoço')) {
-                const replyTime = new Date(userData.replyTime);
-                const rowNumber = userData.rowNumber;
-                const atendenteReplyTime = new Date();
-                atendenteReplyTime.setHours(atendenteReplyTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
-                
-                // Calcula o tempo de resposta do atendente
-                const timeDiff = calculateWorkingTime(replyTime, atendenteReplyTime); 
+            else{
+                userData = await findUserTrackingData(message.to);
+            }
+            // Verifica se a mensagem indica um novo usuário que precisa ser registrado
+            if (message.body.includes('Por favor digite o número da opção que você deseja') && message.from === numeroDono && !userData) {
+                // Registra o novo usuário no banco de dados
+                await registerUserInteraction(message.to);
+            } 
+            // Verifica se o usuário existe e está esperando para escolher uma opção (1 a 9)
+            else if (userData && !userData.option && !userData.replyTime && !userData.rowNumber) {
+                // Verifica se a resposta do cliente é uma opção válida (1-9)
+                if (/^[1-9]$/.test(message.body.trim())) {     //ver o que acontece se a mensagem tiver espaços.
+                    const userChoice = message.body.trim();
+                    const userOption = optionsMap[userChoice]; // Obtém a opção correspondente ao número
+                    const currentTime = new Date();
+                    currentTime.setHours(currentTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
+                    const weekday = currentTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
 
-                const dateAndTime = atendenteReplyTime.toLocaleString('pt-BR');
+                    // Adiciona os dados do cliente na planilha Excel
+                    addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString('pt-BR')], weekday);
+                    
+                    // Encontra o número da linha onde a resposta do cliente foi registrada na planilha
+                    const rowNumber = findRowByOption(currentTime.toLocaleString('pt-BR')); 
 
-                // Adiciona os dados do atendente na planilha, na mesma linha do cliente
-                addRowToExcel([null, null, null, null, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
-                
-                // Limpa os dados de rastreamento do usuário no banco de dados
-                await clearUserTrackingData(message.to);
+                    // Atualiza os dados do usuário no banco de dados com a opção, tempo e número da linha
+                    await updateMessageTracking(message.from, userOption, currentTime.toISOString(), rowNumber);
+                // Verifica se o cliente digitou '10' (Reiniciar o fluxo?)
+                } else if (/^10$/.test(message.body.trim())) {
+                    // Limpa os dados de rastreamento do usuário no banco de dados
+                    await clearUserTrackingData(message.to); 
+                }
+            }
+            // Verifica se a mensagem é do atendente e se o usuário está sendo atendido
+            else if (message.from === numeroDono && userData && userData.option && userData.replyTime && userData.rowNumber) {
+                // Verifica se a mensagem do atendente NÃO contém frases específicas 
+                if (!message.body.includes('estou encaminhando para atendimento') && !message.body.includes('Estamos fechados no momento') && !message.body.includes('Nossos atendentes estão em horário de almoço')) {
+                    const replyTime = new Date(userData.replyTime);
+                    const rowNumber = userData.rowNumber;
+                    const atendenteReplyTime = new Date();
+                    atendenteReplyTime.setHours(atendenteReplyTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
+                    
+                    // Calcula o tempo de resposta do atendente
+                    const timeDiff = calculateWorkingTime(replyTime, atendenteReplyTime); 
+
+                    const dateAndTime = atendenteReplyTime.toLocaleString('pt-BR');
+
+                    // Adiciona os dados do atendente na planilha, na mesma linha do cliente
+                    addRowToExcel([null, null, null, null, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
+                    
+                    // Limpa os dados de rastreamento do usuário no banco de dados
+                    await clearUserTrackingData(message.to);
+                }
             }
         }
     } catch (err) {
