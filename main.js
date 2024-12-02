@@ -69,9 +69,10 @@ client.on('message_create', async message => {
                 const userOption = optionsMap[userChoice]; // Obtém a opção correspondente ao número
                 const currentTime = new Date();
                 currentTime.setHours(currentTime.getHours() - 3); // Ajusta o fuso horário para GMT-3
+                const weekday = currentTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
 
                 // Adiciona os dados do cliente na planilha Excel
-                addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString('pt-BR')]);
+                addRowToExcel([message.from.replace('@c.us', ''), userOption, currentTime.toLocaleString('pt-BR')], weekday);
                 
                 // Encontra o número da linha onde a resposta do cliente foi registrada na planilha
                 const rowNumber = findRowByOption(currentTime.toLocaleString('pt-BR')); 
@@ -96,11 +97,10 @@ client.on('message_create', async message => {
                 // Calcula o tempo de resposta do atendente
                 const timeDiff = calculateWorkingTime(replyTime, atendenteReplyTime); 
 
-                const weekday = atendenteReplyTime.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
                 const dateAndTime = atendenteReplyTime.toLocaleString('pt-BR');
 
                 // Adiciona os dados do atendente na planilha, na mesma linha do cliente
-                addRowToExcel([null, null, null, weekday, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
+                addRowToExcel([null, null, null, null, dateAndTime, timeDiff.toFixed(2)], true, rowNumber);
                 
                 // Limpa os dados de rastreamento do usuário no banco de dados
                 await clearUserTrackingData(message.to);
