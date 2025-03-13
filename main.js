@@ -11,9 +11,10 @@ let numeroDono = '';
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        executablePath: '/usr/bin/chromium-browser',
-    }
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        executablePath: '/usr/bin/google-chrome',
+    },
 });
 
 // Quando o cliente estiver pronto, execute este código (apenas uma vez)
@@ -25,6 +26,7 @@ client.once('ready', () => {
 
 // Quando o cliente receber o QR-Code
 client.on('qr', (qr) => {
+    console.log('Escaneie o QR Code para conectar no WhatsApp:');
     qrcode.generate(qr, { small: true });
 });
 
